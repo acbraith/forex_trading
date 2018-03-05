@@ -28,7 +28,7 @@ from multiprocessing.pool import Pool
 from indicators import *
 
 DATA_PERIOD = '1H' # M, D, H, Min
-TEST_PERIOD = '3M'
+TEST_PERIOD = '6M'
 AUTOREGRESSION_N = 10
 
 # forex data
@@ -80,7 +80,7 @@ def load_chunk(f):
 p = Pool()
 chunks = p.map(load_chunk, FILENAMES)
 print("Building DataFrame...")
-ohlcv = pd.concat(chunks)
+ohlcv = pd.concat(chunks).sort_index()
 
 ########################################
 # Define Model, Test, Train
@@ -139,12 +139,21 @@ class Signals:
                 self.ys)
     def preprocess(self, X):
         xs = []
+
+        # basic inputs
+        # price change deltas
+        xs += [X.BID.open.diff()]
+        # candlestick deltas
+        xs += [X.BID.diff(axis=1).dropna(axis=1)]
+        # spreads
+        xs += [X.ASK.open - X.BID.open]
+
         # technical indicators
         for i,ind_params in self.indicator_params.items():
             for ind,params in ind_params.items():
                 xs += ind(X['BID'], **params)
 
-        X = pd.concat([X.diff()]+xs, axis=1)
+        X = pd.concat(xs, axis=1)
 
         # autoregressive inputs
         n = AUTOREGRESSION_N
@@ -296,7 +305,7 @@ def get_fitness(m_data_train):
     return f
 
 def train_models(data_train):
-    p = Pool(processes=6)
+    p = Pool(processes=4)
     methods = ['random','simulated anneal','evolutionary','fit_models']
     method = methods[2]
 

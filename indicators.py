@@ -10,7 +10,7 @@ import pandas as pd
 
 def EMA(df, n=7, price='close'):
     n = max(int(n),2)
-    return (df[price].ewm(span=n).mean(),)
+    return (df[price] - df[price].ewm(span=n).mean(),)
 
 def BBANDS(df, n=20, k=2, price='close'):
     '''
@@ -20,7 +20,7 @@ def BBANDS(df, n=20, k=2, price='close'):
     
     ma = df[price].rolling(window=n).mean()
     std = df[price].rolling(window=n).std()
-    return (ma-k*std, ma, ma+k*std)
+    return (df[price]-ma-k*std, df[price]-ma, df[price]-ma+k*std)
 
 def MACD(df, n_fast=12, n_slow=26, n_signal=9, price='close'):
     '''
