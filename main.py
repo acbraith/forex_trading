@@ -3,6 +3,7 @@ TODO
     - Model inputs:
         Add in autoregressive OHLC bars of different time periods
             eg past x 1min, past y 15min, past z 1hour...
+    - Speed up evaluate_models
 '''
 
 import pandas as pd 
@@ -31,20 +32,7 @@ TEST_PERIOD = '3M'
 AUTOREGRESSION_N = 10
 
 # forex data
-FILENAMES = [
-    'DAT_ASCII_EURUSD_T_201701.csv',
-    'DAT_ASCII_EURUSD_T_201702.csv',
-    'DAT_ASCII_EURUSD_T_201703.csv',
-    'DAT_ASCII_EURUSD_T_201704.csv',
-    'DAT_ASCII_EURUSD_T_201705.csv',
-    'DAT_ASCII_EURUSD_T_201706.csv',
-    'DAT_ASCII_EURUSD_T_201707.csv',
-    'DAT_ASCII_EURUSD_T_201708.csv',
-    'DAT_ASCII_EURUSD_T_201709.csv',
-    'DAT_ASCII_EURUSD_T_201710.csv',
-    'DAT_ASCII_EURUSD_T_201711.csv',
-    'DAT_ASCII_EURUSD_T_201712.csv',
-]
+FILENAMES = [f for f in os.listdir('EURUSD') if os.path.isfile(os.path.join('EURUSD',f))]
 
 ########################################
 # Preprocess Data
@@ -100,16 +88,17 @@ ohlcv = pd.concat(chunks)
 
 ########################################
 # Define Model
+
 m = LogisticRegression
 
 class Signals:
     def __init__(self, dim):
         self.dim = dim
         self.models = {
-            'enter_long':m(),
-            'exit_long':m(),
+            'enter_long': m(),
+            'exit_long':  m(),
             'enter_short':m(),
-            'exit_short':m(),
+            'exit_short': m(),
         }
         self.xs = {
             'enter_long':np.random.normal(size=(100,dim)),
@@ -192,6 +181,7 @@ class Signals:
 
 ########################################
 # Test Given Model
+
 def evaluate_models(data_test, signals, plot=False):
 
     plot_bid = []
@@ -212,7 +202,23 @@ def evaluate_models(data_test, signals, plot=False):
     enter_shorts = signals.enter_short(np.nan_to_num(X_test))
     exit_longs   = signals.exit_long  (np.nan_to_num(X_test))
     exit_shorts  = signals.exit_short (np.nan_to_num(X_test))
+
+    # Sanity check; check we don't have access to future data
+    if False:
+        for i,(datetime,row) in enumerate(data_test.iterrows()):
+            x = np.nan_to_num(X_test)[i,:]
+            print(row)
+            print(x)
+            # check x give no information about row
     
+    '''
+    TODO this is VERY slow, need to be more intelligent
+    Idea:
+        Create array of positions
+        Propogate forward positions, giving us an array of positions
+        First, using this we can get point where position changes and only focus on these
+        More intelligently, we can maybe use some vector maths to skip the loop completely
+    '''
     for i,(datetime,row) in enumerate(data_test.iterrows()):
         if i > AUTOREGRESSION_N:
             enter_long  = enter_longs[i]
@@ -281,9 +287,9 @@ def evaluate_models(data_test, signals, plot=False):
 
     return sharpe, val, buy_and_hold_ret
 
-
 ########################################
 # Train Model
+
 def get_fitness(m_data_train):
     m,data_train = m_data_train
     f,_,_ = evaluate_models(data_train, m)
@@ -378,6 +384,11 @@ def train_models(data_train):
             subset_len = int(len(data_train)/10)
             i_start = np.random.randint(0,len(data_train)-subset_len)
             train_subset = data_train[i_start:i_start+subset_len]
+            # alternate using full dataset (and use full dataset on last gen)
+            if g %2 != generations % 2:
+                print("Use full dataset")
+                train_subset = data_train
+            # calculate fitnesses
             fs = list(
                 p.map(
                     get_fitness, 
@@ -388,9 +399,9 @@ def train_models(data_train):
                     )
                 )
             ranks = [sorted(fs, reverse=True).index(f) for f in fs]
-            print("Generation",g)
-            print("  Max Fitness:", np.max(fs))
-            print(" Mean Fitness:", np.mean(fs))
+            print("Generation", g,
+                "| Max Fitness =", round(np.max(fs),2), 
+                "| Mean Fitness =", round(np.mean(fs),2))
             ps = 1/(np.array(ranks)+1)
             ps = ps / ps.sum()
             best = gen[np.argmax(fs)]
@@ -428,6 +439,7 @@ def train_models(data_train):
 
 ########################################
 # Split Data
+
 chunks = ohlcv.groupby(pd.TimeGrouper(freq=TEST_PERIOD))
 
 ks = sorted(chunks.groups.keys())
