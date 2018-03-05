@@ -1,3 +1,13 @@
+'''
+TODO
+    - Model inputs:
+        Autoregressive OHLC
+            Try diff instead of just absolute values
+            Diff in closes and diff from close
+        Add in autoregressive OHLC bars of different time periods
+            eg past 10 1min, past 10 15min, past 10 1hour...
+'''
+
 import pandas as pd 
 import numpy as np
 
@@ -38,6 +48,11 @@ FILENAMES = [
     'DAT_ASCII_EURUSD_T_201711.csv',
     'DAT_ASCII_EURUSD_T_201712.csv',
 ]
+
+########################################
+# Preprocess Data
+########################################
+
 def load_chunk(f):
     print("Loading", f)
     try:
@@ -82,11 +97,13 @@ chunks = p.map(load_chunk, FILENAMES)
 print("Building DataFrame...")
 ohlcv = pd.concat(chunks)
 
-# choose model
-m = LogisticRegression
+########################################
+# Define Model, Test, Train
+########################################
 
-# Backtest
-chunks = ohlcv.groupby(pd.TimeGrouper(freq=TEST_PERIOD))
+########################################
+# Define Model
+m = LogisticRegression
 
 class Signals:
     def __init__(self, dim):
@@ -104,7 +121,7 @@ class Signals:
             'exit_short':np.random.normal(size=(100,dim)),
         }
         self.indicator_params = {}
-        for i in [1,2]:
+        for i in range(2):
             self.indicator_params[i] = {
                 EMA: {
                     'n':np.random.randint(1,100),
@@ -141,14 +158,14 @@ class Signals:
             for ind,params in ind_params.items():
                 xs += ind(X['BID'], **params)
 
-        X = pd.concat([X]+xs, axis=1)
+        X = pd.concat([X.diff()]+xs, axis=1)
 
         # autoregressive inputs
         n = AUTOREGRESSION_N
         for i in range(n):
-            xs += [X.shift(i)]
+            xs += [X.diff().shift(i)]
 
-        return pd.concat(xs, axis=1).fillna(method='pad')
+        return pd.concat(xs, axis=1).fillna(method='pad').fillna(0)
 
     def enter_long(self,X):
         return self.models['enter_long'].predict(X)
@@ -158,17 +175,17 @@ class Signals:
         return self.models['enter_short'].predict(X)
     def exit_short(self,X):
         return self.models['exit_short'].predict(X)
-    def mutate(self):
+    def get_neighbour(self):
         other = Signals(self.dim)
         for k in self.models:
-            other.models[k].coef_ = self.models[k].coef_ + \
-                self.models[k].coef_ * np.random.normal(size=self.xs[k].shape) / 5
-            other.models[k].intercept_ = self.models[k].intercept_ + \
-                self.models[k].intercept_ * np.random.normal(size=self.xs[k].shape) / 5
-            #other.xs[k] = self.xs[k] + self.xs[k] * np.random.normal(size=self.xs[k].shape) / 20
-            #other.models[k].fit(
-            #    other.xs[k],
-            #    other.ys)
+            #other.models[k].coef_ = self.models[k].coef_ + \
+            #    self.models[k].coef_ * np.random.normal(size=self.xs[k].shape) / 5
+            #other.models[k].intercept_ = self.models[k].intercept_ + \
+            #    self.models[k].intercept_ * np.random.normal(size=self.xs[k].shape) / 5
+            other.xs[k] = self.xs[k] + self.xs[k] * np.random.normal(size=self.xs[k].shape) / 20
+            other.models[k].fit(
+                other.xs[k],
+                other.ys)
         for i in self.indicator_params:
             for ind in self.indicator_params[i]:
                 for param in self.indicator_params[i][ind]:
@@ -176,6 +193,8 @@ class Signals:
                         self.indicator_params[i][ind][param] * np.random.normal() / 5
         return other
 
+########################################
+# Test Given Model
 def evaluate_models(data_test, signals, plot=False):
 
     plot_bid = []
@@ -265,6 +284,9 @@ def evaluate_models(data_test, signals, plot=False):
 
     return sharpe, val, buy_and_hold_ret
 
+
+########################################
+# Train Model
 def get_fitness(m_data_train):
     m,data_train = m_data_train
     f,_,_ = evaluate_models(data_train, m)
@@ -334,7 +356,7 @@ def train_models(data_train):
 
             T = get_temp(i+1)
 
-            s_primes = [s.mutate() for _ in range(iters_per_temp)]
+            s_primes = [s.get_neighbour() for _ in range(iters_per_temp)]
             score_s_primes = list(p.map(get_fitness, zip(s_primes, itertools.repeat(data_train,iters_per_temp))))
 
             for s_prime,score_s_prime in zip(s_primes,score_s_primes):
@@ -376,7 +398,7 @@ def train_models(data_train):
             ps = ps / ps.sum()
             best = gen[np.argmax(fs)]
             # breed next generation
-            gen = [np.random.choice(gen,p=ps).mutate() for _ in range(population)]
+            gen = [np.random.choice(gen,p=ps).get_neighbour() for _ in range(population)]
             # add some new, random models
             gen[:int(population/10)] = [Signals(d) for _ in range(int(population/10))] 
             # preserve best
@@ -403,10 +425,22 @@ def train_models(data_train):
             )
         return signals
 
+
+########################################
+# Backtest
+########################################
+
+########################################
+# Split Data
+chunks = ohlcv.groupby(pd.TimeGrouper(freq=TEST_PERIOD))
+
 ks = sorted(chunks.groups.keys())
 
 test_returns = []
 buyhold_returns = []
+
+########################################
+# Train/Test on Data
 
 for train,test in zip(ks[:-1],ks[1:]):
 
