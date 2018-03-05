@@ -1,11 +1,8 @@
 '''
 TODO
     - Model inputs:
-        Autoregressive OHLC
-            Try diff instead of just absolute values
-            Diff in closes and diff from close
         Add in autoregressive OHLC bars of different time periods
-            eg past 10 1min, past 10 15min, past 10 1hour...
+            eg past x 1min, past y 15min, past z 1hour...
 '''
 
 import pandas as pd 
@@ -30,8 +27,8 @@ from multiprocessing.pool import Pool
 from indicators import *
 
 DATA_PERIOD = '1H' # M, D, H, Min
-TEST_PERIOD = '6M'
-AUTOREGRESSION_N = 1
+TEST_PERIOD = '3M'
+AUTOREGRESSION_N = 10
 
 # forex data
 FILENAMES = [
@@ -424,7 +421,6 @@ def train_models(data_train):
             (data_train['BID']['open'] < data_train['BID']['close']).as_matrix()[1:-AUTOREGRESSION_N]
             )
         return signals
-
 
 ########################################
 # Backtest
