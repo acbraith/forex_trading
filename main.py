@@ -4,6 +4,8 @@ TODO
         Add in autoregressive OHLC bars of different time periods
             eg past x 1min, past y 15min, past z 1hour...
     - Speed up evaluate_models
+    - Use Bayesian Optimization to tune model parameters
+        https://static.sigopt.com/b/20a144d208ef255d3b981ce419667ec25d8412e2/pdf/SigOpt_Bayesian_Optimization_Primer.pdf
 '''
 
 import pandas as pd 
@@ -383,8 +385,8 @@ def train_models(data_train):
     elif method == 'evolutionary':
         # Evolutionary Programming
 
-        population  = 1000
-        generations = int(N/population)
+        generations = 50
+        population = int(N/generations)
         # populate initial generation
         gen = [Signals(d) for _ in range(population)]
         for g in range(generations):
